@@ -53,16 +53,19 @@ jobs:
             codesign --verify --deep "$APP_PATH"
           fi
 
-      - name: Re-create DMG after signing
+      - name: Re-create DMG after signing (with Applications symlink)
         if: runner.os == 'macOS'
         run: |
-          # The DMG was already made before signing, so re-create it
           DMG_PATH=$(find out/make -name "*.dmg" | head -1)
           APP_PATH=$(find out -name "*.app" -type d | head -1)
           if [ -n "$DMG_PATH" ] && [ -n "$APP_PATH" ]; then
             ARCH="${{ matrix.arch }}"
             rm -f "$DMG_PATH"
-            hdiutil create -volname "MIDI Hooks" -srcfolder "$APP_PATH" -ov -format UDZO "out/make/MIDI Hooks-$ARCH.dmg"
+            STAGE=$(mktemp -d)
+            cp -R "$APP_PATH" "$STAGE/"
+            ln -s /Applications "$STAGE/Applications"
+            hdiutil create -volname "MIDI Hooks" -srcfolder "$STAGE" -ov -format UDZO "out/make/MIDI Hooks-$ARCH.dmg"
+            rm -rf "$STAGE"
           fi
 
       - name: Upload artifacts to release
