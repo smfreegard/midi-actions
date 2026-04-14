@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';">
+  <title>MIDI Hooks</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="header">
+    <div class="header-left">
+      <h1>MIDI Hooks</h1>
+    </div>
+    <div class="header-right">
+      <label for="midi-device">MIDI Device:</label>
+      <select id="midi-device">
+        <option value="">-- Select Device --</option>
+      </select>
+      <button id="midi-refresh" title="Refresh device list">&#x21bb;</button>
+      <span id="midi-status" class="status-disconnected">Disconnected</span>
+    </div>
+  </header>
+
+  <main id="main">
+    <div id="action-grid"></div>
+    <div id="empty-state">
+      <p>No actions configured.</p>
+      <p>Click <strong>+ Add Action</strong> to get started.</p>
+    </div>
+  </main>
+
+  <div id="toolbar">
+    <button id="add-action-btn">+ Add Action</button>
+  </div>
+
+  <footer id="status-bar">
+    <div id="status-log"></div>
+  </footer>
+
+  <!-- Action Editor Modal -->
+  <div id="action-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modal-title">Configure Action</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <label for="action-name">Name:</label>
+          <input type="text" id="action-name" placeholder="e.g. OnAirLight">
+        </div>
+
+        <div class="form-row">
+          <label for="action-type">Type:</label>
+          <select id="action-type">
+            <option value="webhook">Webhook</option>
+            <option value="keypress">Keypress</option>
+          </select>
+        </div>
+
+        <h3>MIDI Triggers</h3>
+        <div id="triggers-list"></div>
+        <div class="trigger-controls">
+          <button id="trigger-learn-btn">Learn</button>
+          <span id="trigger-learn-status" class="hidden">Move a fader/knob/button...</span>
+        </div>
+
+        <!-- Webhook fields -->
+        <div id="webhook-fields">
+          <h3>ON Webhook</h3>
+          <div class="form-row">
+            <label for="on-method">Method:</label>
+            <select id="on-method">
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+            </select>
+            <input type="text" id="on-url" placeholder="http://..." class="flex-grow">
+            <button id="test-on-btn" class="btn-small">Test</button>
+          </div>
+
+          <h3>OFF Webhook</h3>
+          <div class="form-row">
+            <label for="off-method">Method:</label>
+            <select id="off-method">
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+            </select>
+            <input type="text" id="off-url" placeholder="http://..." class="flex-grow">
+            <button id="test-off-btn" class="btn-small">Test</button>
+          </div>
+        </div>
+
+        <!-- Keypress fields -->
+        <div id="keypress-fields" class="hidden">
+          <h3>Keystroke</h3>
+          <div class="form-row">
+            <label for="keys-display">Keys:</label>
+            <input type="text" id="keys-display" readonly placeholder="Click Learn Keys and press a combination" class="flex-grow">
+            <button id="keys-learn-btn" class="btn-small">Learn Keys</button>
+            <button id="test-keys-btn" class="btn-small">Test</button>
+          </div>
+          <div class="form-row">
+            <label for="debounce-ms">Debounce:</label>
+            <input type="number" id="debounce-ms" min="0" max="5000" step="50" value="200" style="width: 100px;">
+            <span class="form-hint">ms &mdash; minimum time between fires</span>
+          </div>
+          <div class="form-hint-block">
+            Keystrokes fire on transitions from OFF to ON (no key sent on OFF). Focus the target application before triggering the CC.
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="modal-delete" class="btn-danger">Delete Action</button>
+        <div class="modal-footer-right">
+          <button id="modal-cancel">Cancel</button>
+          <button id="modal-save" class="btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="action-view.js"></script>
+  <script src="config-panel.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

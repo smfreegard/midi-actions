@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "midiDeviceName": null,
+  "midiChannel": null,
+  "faders": [],
+  "webhookTimeoutMs": 5000,
+  "minimizeToTray": true,
+  "startMinimized": false
+}
