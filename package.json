@@ -17,5 +17,5 @@
     "@electron-forge/maker-zip": "^7.0.0",
     "electron": "^33.0.0"
   },
-  "license": "MIT"
+  "license": "AGPL-3.0-only"
 }
