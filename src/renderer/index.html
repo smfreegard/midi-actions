@@ -22,6 +22,11 @@
     </div>
   </header>
 
+  <div id="ble-banner" class="ble-banner hidden">
+    <span class="ble-banner-text">BLE devices need reconnection</span>
+    <button id="ble-banner-connect" class="btn-primary btn-small">Connect</button>
+  </div>
+
   <main id="main">
     <div id="action-grid"></div>
     <div id="empty-state">
@@ -32,6 +37,7 @@
 
   <div id="toolbar">
     <button id="add-action-btn">+ Add Action</button>
+    <button id="reconnect-ble-btn" class="hidden" title="Reconnect to configured Shelly BLE devices">Reconnect BLE</button>
   </div>
 
   <footer id="status-bar">
@@ -57,7 +63,12 @@
           <select id="action-type">
             <option value="webhook">Webhook</option>
             <option value="keypress">Keypress</option>
+            <option value="shelly-ble">Shelly BLE</option>
           </select>
+          <label class="checkbox-label">
+            <input type="checkbox" id="action-enabled" checked>
+            Enabled
+          </label>
         </div>
 
         <h3>MIDI Triggers</h3>
@@ -72,7 +83,7 @@
           <h3>ON Webhook</h3>
           <div class="form-row">
             <label for="on-method">Method:</label>
-            <select id="on-method">
+            <select id="on-method" class="select-narrow">
               <option value="GET">GET</option>
               <option value="POST">POST</option>
               <option value="PUT">PUT</option>
@@ -84,13 +95,32 @@
           <h3>OFF Webhook</h3>
           <div class="form-row">
             <label for="off-method">Method:</label>
-            <select id="off-method">
+            <select id="off-method" class="select-narrow">
               <option value="GET">GET</option>
               <option value="POST">POST</option>
               <option value="PUT">PUT</option>
             </select>
             <input type="text" id="off-url" placeholder="http://..." class="flex-grow">
             <button id="test-off-btn" class="btn-small">Test</button>
+          </div>
+        </div>
+
+        <!-- Shelly BLE fields -->
+        <div id="shelly-ble-fields" class="hidden">
+          <h3>Shelly Device</h3>
+          <div class="form-row">
+            <label>Device:</label>
+            <input type="text" id="shelly-device-name" readonly placeholder="Click Scan & Connect" class="flex-grow">
+            <button id="shelly-scan-btn" class="btn-small">Scan &amp; Connect</button>
+          </div>
+          <div class="form-row">
+            <label for="shelly-component-id">Switch ID:</label>
+            <input type="number" id="shelly-component-id" min="0" max="10" value="0" style="width: 70px;">
+            <span class="form-hint">Component ID (0 for most devices)</span>
+          </div>
+          <div class="form-row">
+            <span id="shelly-ble-status" class="form-hint">Not connected</span>
+            <button id="test-shelly-btn" class="btn-small">Test Toggle</button>
           </div>
         </div>
 
@@ -123,6 +153,7 @@
     </div>
   </div>
 
+  <script src="shelly-ble.js"></script>
   <script src="action-view.js"></script>
   <script src="config-panel.js"></script>
   <script src="app.js"></script>

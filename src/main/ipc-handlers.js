@@ -55,6 +55,23 @@ function registerIpcHandlers(mainWindow, midiManager, dispatcher, config, saveCo
     app.quit();
   });
 
+  // Shelly BLE: main asks renderer to fire, renderer reports result
+  dispatcher.onShellyFire = (actionId, actionName, deviceName, componentId, on) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('shelly:fire', {
+        actionId,
+        actionName,
+        deviceName,
+        componentId,
+        on,
+      });
+    }
+  };
+
+  ipcMain.on('shelly:result', (_event, data) => {
+    dispatcher.report(data.actionName, data.on, data.success, data.detail);
+  });
+
   dispatcher.onStatus = (status) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('webhook:status', status);

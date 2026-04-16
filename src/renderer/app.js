@@ -20,8 +20,11 @@
   async function initMidi() {
     try {
       midiAccess = await navigator.requestMIDIAccess({ sysex: false });
-      midiAccess.onstatechange = () => refreshDevices();
-      refreshDevices();
+      midiAccess.onstatechange = (e) => {
+        console.log('[midi] state change:', e.port.name, e.port.state);
+        populateDeviceList();
+      };
+      populateDeviceList();
     } catch (err) {
       console.error('Web MIDI API not available:', err);
       statusEl.textContent = 'MIDI unavailable';
@@ -29,11 +32,19 @@
     }
   }
 
-  function refreshDevices() {
+  // Chromium's MIDI backend doesn't detect USB devices connected after
+  // requestMIDIAccess(). The only reliable fix is a full app restart
+  // which re-initializes the entire Chromium process.
+  function refreshMidi() {
+    window.api.relaunch();
+  }
+
+  function populateDeviceList() {
     deviceSelect.innerHTML = '<option value="">-- Select Device --</option>';
     if (!midiAccess) return;
 
     for (const [id, input] of midiAccess.inputs) {
+      if (input.state !== 'connected') continue;
       const opt = document.createElement('option');
       opt.value = id;
       opt.textContent = input.name || id;
@@ -43,24 +54,23 @@
       deviceSelect.appendChild(opt);
     }
 
+    // Auto-connect if saved device appeared
     if (config.midiDeviceName && !currentInput) {
       for (const [id, input] of midiAccess.inputs) {
-        if (input.name === config.midiDeviceName || id === config.midiDeviceName) {
+        if (input.state === 'connected' &&
+            (input.name === config.midiDeviceName || id === config.midiDeviceName)) {
           connectDevice(id);
           break;
         }
       }
     }
 
+    // Detect disconnection of current device
     if (currentInput) {
-      let found = false;
-      for (const [id] of midiAccess.inputs) {
-        if (id === currentInput.id) {
-          found = true;
-          break;
-        }
+      const port = midiAccess.inputs.get(currentInput.id);
+      if (!port || port.state !== 'connected') {
+        handleDisconnect();
       }
-      if (!found) handleDisconnect();
     }
   }
 
@@ -145,6 +155,9 @@
 
   function renderActions() {
     ActionView.render(config, openActionConfig);
+    if (typeof updateReconnectBtnVisibility === 'function') {
+      updateReconnectBtnVisibility();
+    }
   }
 
   function openActionConfig(index) {
@@ -202,7 +215,7 @@
     }
   });
 
-  refreshBtn.addEventListener('click', refreshDevices);
+  refreshBtn.addEventListener('click', refreshMidi);
   addActionBtn.addEventListener('click', () => openActionConfig(-1));
 
   window.api.onWebhookStatus((data) => {
@@ -213,7 +226,132 @@
     StatusBar.addEntry(msg, data.success);
   });
 
+  // --- Shelly BLE ---
+
+  // Listen for fire requests from main process dispatcher
+  window.api.onShellyFire(async (data) => {
+    const { actionName, deviceName, componentId, on } = data;
+    try {
+      await ShellyBle.switchSet(deviceName, componentId, on);
+      window.api.sendShellyResult({
+        actionName,
+        on,
+        success: true,
+        detail: on ? 'ON' : 'OFF',
+      });
+    } catch (err) {
+      window.api.sendShellyResult({
+        actionName,
+        on,
+        success: false,
+        detail: err.message,
+      });
+    }
+  });
+
+  // ShellyBle.onConnectionChange is set in the BLE startup banner section below.
+
+  // --- BLE Reconnect button ---
+
+  const reconnectBleBtn = document.getElementById('reconnect-ble-btn');
+
+  function updateReconnectBtnVisibility() {
+    const hasShellyActions = config.actions.some(
+      (a) => a.type === 'shelly-ble' && a.shellyDeviceName && a.enabled !== false
+    );
+    reconnectBleBtn.classList.toggle('hidden', !hasShellyActions);
+  }
+
+  reconnectBleBtn.addEventListener('click', async () => {
+    const deviceNames = [
+      ...new Set(
+        config.actions
+          .filter((a) => a.type === 'shelly-ble' && a.shellyDeviceName && a.enabled !== false)
+          .map((a) => a.shellyDeviceName)
+      ),
+    ];
+    if (deviceNames.length === 0) return;
+
+    reconnectBleBtn.disabled = true;
+    reconnectBleBtn.textContent = 'Connecting...';
+
+    const results = await ShellyBle.reconnectAll(deviceNames);
+    for (const r of results) {
+      StatusBar.addEntry(
+        r.success ? `${r.name} connected` : `${r.name} failed: ${r.error || 'cancelled'}`,
+        r.success
+      );
+    }
+
+    reconnectBleBtn.disabled = false;
+    reconnectBleBtn.textContent = 'Reconnect BLE';
+  });
+
+  // --- BLE startup banner ---
+
+  const bleBanner = document.getElementById('ble-banner');
+  const bleBannerBtn = document.getElementById('ble-banner-connect');
+
+  function updateBleBanner() {
+    const disconnectedDevices = [
+      ...new Set(
+        config.actions
+          .filter((a) => a.type === 'shelly-ble' && a.shellyDeviceName && a.enabled !== false)
+          .filter((a) => !ShellyBle.isConnected(a.shellyDeviceName))
+          .map((a) => a.shellyDeviceName)
+      ),
+    ];
+    if (disconnectedDevices.length > 0) {
+      bleBanner.classList.remove('hidden');
+      bleBanner.querySelector('.ble-banner-text').textContent =
+        `${disconnectedDevices.length} BLE device(s) need reconnection`;
+    } else {
+      bleBanner.classList.add('hidden');
+    }
+  }
+
+  bleBannerBtn.addEventListener('click', async () => {
+    const deviceNames = [
+      ...new Set(
+        config.actions
+          .filter((a) => a.type === 'shelly-ble' && a.shellyDeviceName && a.enabled !== false)
+          .filter((a) => !ShellyBle.isConnected(a.shellyDeviceName))
+          .map((a) => a.shellyDeviceName)
+      ),
+    ];
+    if (deviceNames.length === 0) return;
+
+    bleBannerBtn.disabled = true;
+    bleBannerBtn.textContent = 'Connecting...';
+
+    const results = await ShellyBle.reconnectAll(deviceNames);
+    for (const r of results) {
+      StatusBar.addEntry(
+        r.success ? `${r.name} connected` : `${r.name} failed: ${r.error || 'not found'}`,
+        r.success
+      );
+    }
+
+    bleBannerBtn.disabled = false;
+    bleBannerBtn.textContent = 'Connect';
+    updateBleBanner();
+    renderActions();
+  });
+
+  // Update banner when BLE connection changes
+  const origOnChange = ShellyBle.onConnectionChange;
+  ShellyBle.onConnectionChange = (deviceName, connected) => {
+    const msg = connected
+      ? `Shelly ${deviceName} connected`
+      : `Shelly ${deviceName} disconnected`;
+    StatusBar.addEntry(msg, connected);
+    renderActions();
+    updateBleBanner();
+  };
+
   // --- Init ---
   renderActions();
+  updateReconnectBtnVisibility();
+  updateBleBanner();
   await initMidi();
 })();

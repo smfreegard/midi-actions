@@ -24,7 +24,9 @@ const ActionView = (() => {
 
   function createCard(action, index, onEdit) {
     const card = document.createElement('div');
-    card.className = 'action-card';
+    const bleDisconnected = action.type === 'shelly-ble' && action.shellyDeviceName &&
+      (typeof ShellyBle === 'undefined' || !ShellyBle.isConnected(action.shellyDeviceName));
+    card.className = 'action-card' + (action.enabled === false || bleDisconnected ? ' disabled' : '');
     card.dataset.actionId = action.id;
     card.dataset.index = index;
 
@@ -42,6 +44,12 @@ const ActionView = (() => {
     } else if (action.type === 'webhook' && action.onUrl) {
       const m = action.onMethod || 'GET';
       detail = `<div class="action-detail">${escapeHtml(m)} ${escapeHtml(truncateUrl(action.onUrl))}</div>`;
+    } else if (action.type === 'shelly-ble' && action.shellyDeviceName) {
+      const bleConnected = typeof ShellyBle !== 'undefined' && ShellyBle.isConnected(action.shellyDeviceName);
+      const bleStatus = bleConnected
+        ? '<span class="ble-connected">connected</span>'
+        : '<span class="ble-disconnected">disconnected</span>';
+      detail = `<div class="action-detail">BLE: ${escapeHtml(action.shellyDeviceName)} ${bleStatus}</div>`;
     }
 
     card.innerHTML = `

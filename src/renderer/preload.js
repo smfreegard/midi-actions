@@ -17,6 +17,22 @@ contextBridge.exposeInMainWorld('api', {
 
   // Keypress test
   testKeypress: (keys) => ipcRenderer.invoke('keypress:test', keys),
+
+  // Shelly BLE: main asks renderer to fire
+  onShellyFire: (callback) => {
+    ipcRenderer.on('shelly:fire', (_event, data) => callback(data));
+  },
+  sendShellyResult: (data) => ipcRenderer.send('shelly:result', data),
+
+  // BLE scanning status and auto-select
+  onBleScanning: (callback) => {
+    ipcRenderer.on('ble:scanning', (_event, scanning) => callback(scanning));
+  },
+  bleAutoSelect: (deviceName) => ipcRenderer.send('ble:autoselect', deviceName),
+
+  // App relaunch (for MIDI refresh)
+  relaunch: () => ipcRenderer.send('app:relaunch'),
+
   onWebhookStatus: (callback) => {
     ipcRenderer.on('webhook:status', (_event, data) => callback(data));
   },

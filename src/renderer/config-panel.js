@@ -69,11 +69,13 @@ const ConfigPanel = (() => {
   const titleEl = () => document.getElementById('modal-title');
   const nameInput = () => document.getElementById('action-name');
   const typeSelect = () => document.getElementById('action-type');
+  const enabledCheckbox = () => document.getElementById('action-enabled');
   const triggersList = () => document.getElementById('triggers-list');
   const learnBtn = () => document.getElementById('trigger-learn-btn');
   const learnStatus = () => document.getElementById('trigger-learn-status');
   const webhookFields = () => document.getElementById('webhook-fields');
   const keypressFields = () => document.getElementById('keypress-fields');
+  const shellyBleFields = () => document.getElementById('shelly-ble-fields');
   const onMethodSelect = () => document.getElementById('on-method');
   const onUrlInput = () => document.getElementById('on-url');
   const offMethodSelect = () => document.getElementById('off-method');
@@ -81,10 +83,14 @@ const ConfigPanel = (() => {
   const keysDisplay = () => document.getElementById('keys-display');
   const keysLearnBtn = () => document.getElementById('keys-learn-btn');
   const debounceInput = () => document.getElementById('debounce-ms');
+  const shellyDeviceNameInput = () => document.getElementById('shelly-device-name');
+  const shellyComponentIdInput = () => document.getElementById('shelly-component-id');
+  const shellyBleStatusEl = () => document.getElementById('shelly-ble-status');
 
   let currentActionIndex = null;
   let currentTriggers = [];
   let currentKeys = '';
+  let currentShellyDeviceName = '';
   let onSaveCallback = null;
   let onDeleteCallback = null;
   let isLearningTriggers = false;
@@ -98,6 +104,7 @@ const ConfigPanel = (() => {
     titleEl().textContent = index === -1 ? 'Add Action' : 'Configure Action';
     nameInput().value = action.name || '';
     typeSelect().value = action.type || 'webhook';
+    enabledCheckbox().checked = action.enabled !== false;
 
     onMethodSelect().value = action.onMethod || 'GET';
     onUrlInput().value = action.onUrl || '';
@@ -107,6 +114,11 @@ const ConfigPanel = (() => {
     currentKeys = action.keys || '';
     keysDisplay().value = currentKeys;
     debounceInput().value = action.debounceMs != null ? action.debounceMs : 200;
+
+    currentShellyDeviceName = action.shellyDeviceName || '';
+    shellyDeviceNameInput().value = currentShellyDeviceName;
+    shellyComponentIdInput().value = action.shellyComponentId != null ? action.shellyComponentId : 0;
+    updateShellyStatus();
 
     currentTriggers = (action.triggers || []).map((t) => ({ ...t }));
     renderTriggers();
@@ -127,6 +139,7 @@ const ConfigPanel = (() => {
     currentActionIndex = null;
     currentTriggers = [];
     currentKeys = '';
+    currentShellyDeviceName = '';
   }
 
   function isOpen() {
@@ -137,6 +150,18 @@ const ConfigPanel = (() => {
     const type = typeSelect().value;
     webhookFields().classList.toggle('hidden', type !== 'webhook');
     keypressFields().classList.toggle('hidden', type !== 'keypress');
+    shellyBleFields().classList.toggle('hidden', type !== 'shelly-ble');
+  }
+
+  function updateShellyStatus() {
+    if (typeof ShellyBle !== 'undefined' && currentShellyDeviceName) {
+      const connected = ShellyBle.isConnected(currentShellyDeviceName);
+      shellyBleStatusEl().textContent = connected ? 'Connected' : 'Disconnected';
+      shellyBleStatusEl().className = connected ? 'form-hint status-connected' : 'form-hint status-disconnected';
+    } else {
+      shellyBleStatusEl().textContent = 'Not connected';
+      shellyBleStatusEl().className = 'form-hint';
+    }
   }
 
   // --- MIDI trigger learn ---
@@ -249,6 +274,7 @@ const ConfigPanel = (() => {
       name,
       type,
       triggers: currentTriggers,
+      enabled: enabledCheckbox().checked,
     };
 
     if (type === 'webhook') {
@@ -271,6 +297,14 @@ const ConfigPanel = (() => {
         ...base,
         keys: currentKeys,
         debounceMs: isNaN(dbRaw) ? 200 : Math.max(0, dbRaw),
+      };
+    }
+    if (type === 'shelly-ble') {
+      if (!currentShellyDeviceName) return null; // validation: device required
+      return {
+        ...base,
+        shellyDeviceName: currentShellyDeviceName,
+        shellyComponentId: parseInt(shellyComponentIdInput().value, 10) || 0,
       };
     }
     return null;
@@ -313,6 +347,47 @@ const ConfigPanel = (() => {
       window.api.testKeypress(currentKeys).then(showTestResult);
     });
 
+    const shellyScanBtn = document.getElementById('shelly-scan-btn');
+    shellyScanBtn.addEventListener('click', async () => {
+      shellyScanBtn.disabled = true;
+      shellyScanBtn.textContent = 'Scanning...';
+      shellyBleStatusEl().textContent = 'Scanning for Shelly devices...';
+      shellyBleStatusEl().className = 'form-hint ble-scanning';
+      try {
+        const name = await ShellyBle.scan();
+        if (name) {
+          currentShellyDeviceName = name;
+          shellyDeviceNameInput().value = name;
+          updateShellyStatus();
+          StatusBar.addEntry(`Connected to ${name}`, true);
+        } else {
+          shellyBleStatusEl().textContent = 'No device selected';
+          shellyBleStatusEl().className = 'form-hint';
+        }
+      } catch (err) {
+        shellyBleStatusEl().textContent = 'Scan failed';
+        shellyBleStatusEl().className = 'form-hint status-disconnected';
+        StatusBar.addEntry(`BLE scan failed: ${err.message}`, false);
+      } finally {
+        shellyScanBtn.disabled = false;
+        shellyScanBtn.textContent = 'Scan & Connect';
+      }
+    });
+
+    document.getElementById('test-shelly-btn').addEventListener('click', async () => {
+      if (!currentShellyDeviceName) {
+        StatusBar.addEntry('No Shelly device connected', false);
+        return;
+      }
+      try {
+        const compId = parseInt(shellyComponentIdInput().value, 10) || 0;
+        const result = await ShellyBle.switchToggle(currentShellyDeviceName, compId);
+        StatusBar.addEntry(`Shelly toggle OK: was_on=${result && result.result ? result.result.was_on : '?'}`, true);
+      } catch (err) {
+        StatusBar.addEntry(`Shelly toggle failed: ${err.message}`, false);
+      }
+    });
+
     document.querySelector('.modal-close').addEventListener('click', close);
     document.querySelector('.modal-backdrop').addEventListener('click', close);
     document.getElementById('modal-cancel').addEventListener('click', close);
@@ -325,6 +400,8 @@ const ConfigPanel = (() => {
           flashError(nameInput());
         } else if (typeSelect().value === 'keypress' && !currentKeys) {
           flashError(keysDisplay());
+        } else if (typeSelect().value === 'shelly-ble' && !currentShellyDeviceName) {
+          flashError(shellyDeviceNameInput());
         }
         return;
       }

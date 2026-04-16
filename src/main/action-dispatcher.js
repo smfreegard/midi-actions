@@ -3,6 +3,7 @@ class ActionDispatcher {
     this.timeoutMs = timeoutMs;
     this.keySender = keySender;
     this.onStatus = null;
+    this.onShellyFire = null; // callback: (actionId, deviceName, componentId, on) => void
     // Map<actionId, Set<ccNumber>> — which CCs are currently "on" for each action
     this.triggerState = new Map();
     // Map<actionId, timestamp> — last time this action fired (for debounce)
@@ -15,6 +16,7 @@ class ActionDispatcher {
     if (!channelMatch) return;
 
     for (const action of config.actions) {
+      if (action.enabled === false) continue;
       const trigger = action.triggers.find((t) => t.ccNumber === controller);
       if (!trigger) continue;
 
@@ -49,6 +51,8 @@ class ActionDispatcher {
         return this.fireWebhook(action, isOn);
       case 'keypress':
         return this.fireKeypress(action, isOn);
+      case 'shelly-ble':
+        return this.fireShellyBle(action, isOn);
       default:
         console.warn(`Unknown action type: ${action.type}`);
     }
@@ -76,6 +80,24 @@ class ActionDispatcher {
       this.report(action.name, true, true, action.keys);
     } catch (err) {
       this.report(action.name, true, false, err.message);
+    }
+  }
+
+  fireShellyBle(action, isOn) {
+    if (!action.shellyDeviceName) {
+      this.report(action.name, isOn, false, 'No Shelly device configured');
+      return;
+    }
+    if (this.onShellyFire) {
+      this.onShellyFire(
+        action.id,
+        action.name,
+        action.shellyDeviceName,
+        action.shellyComponentId || 0,
+        isOn
+      );
+    } else {
+      this.report(action.name, isOn, false, 'Shelly BLE handler not registered');
     }
   }
 
