@@ -50,6 +50,17 @@ For a Shelly smart plug on your local network at `192.168.1.100`:
 - **ON URL:** `http://192.168.1.100/relay/0?turn=on` (GET)
 - **OFF URL:** `http://192.168.1.100/relay/0?turn=off` (GET)
 
+### Shelly BLE Troubleshooting
+
+If the BLE connection shows "Connected" but RPC calls fail with GATT errors on macOS, toggle the system Bluetooth off and back on (System Settings > Bluetooth). macOS Core Bluetooth can leave stale connection state that prevents new BLE operations from completing. This is a macOS limitation, not a bug in the app.
+
+Common symptoms:
+- Clicking **Test Toggle** produces no response
+- Moving a configured fader shows "GATT operation failed for unknown reason" in the status bar
+- Connection banner keeps prompting reconnection
+
+Fix: Bluetooth off/on in macOS System Settings, then click **Connect** in the app banner.
+
 ### Rodecaster MIDI Setup
 
 - **RCP1:** Enable MIDI control in Settings > Advanced > Audio > Operations
