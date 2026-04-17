@@ -32,9 +32,11 @@ const ActionView = (() => {
 
     const triggerList = action.triggers
       .map((t) => {
-        const val = ccValues.get(t.ccNumber);
+        const key = t.channel != null ? `${t.channel}:${t.ccNumber}` : `*:${t.ccNumber}`;
+        const val = ccValues.get(key);
         const valStr = val != null ? val : '--';
-        return `<span class="trigger-badge" data-cc="${t.ccNumber}">CC ${t.ccNumber} <span class="trigger-value">${valStr}</span></span>`;
+        const chLabel = t.channel != null ? ` ch${t.channel + 1}` : '';
+        return `<span class="trigger-badge" data-cc="${t.ccNumber}" data-ch="${t.channel != null ? t.channel : ''}">CC ${t.ccNumber}${chLabel} <span class="trigger-value">${valStr}</span></span>`;
       })
       .join('');
 
@@ -63,14 +65,21 @@ const ActionView = (() => {
     return card;
   }
 
-  function updateCC(ccNumber, value) {
-    ccValues.set(ccNumber, value);
+  function updateCC(channel, ccNumber, value) {
+    // Cache keyed by "channel:cc" for channel-specific triggers,
+    // and also by "*:cc" so channel-agnostic triggers update too.
+    ccValues.set(`${channel}:${ccNumber}`, value);
+    ccValues.set(`*:${ccNumber}`, value);
 
-    // Update all trigger badges showing this CC
+    // Update trigger badges that match this CC and (this channel or any channel)
     const badges = document.querySelectorAll(`.trigger-badge[data-cc="${ccNumber}"]`);
     badges.forEach((badge) => {
-      const valEl = badge.querySelector('.trigger-value');
-      if (valEl) valEl.textContent = value;
+      const badgeCh = badge.dataset.ch;
+      // Match if badge has no channel (any) or matches this channel
+      if (badgeCh === '' || parseInt(badgeCh, 10) === channel) {
+        const valEl = badge.querySelector('.trigger-value');
+        if (valEl) valEl.textContent = value;
+      }
     });
   }
 

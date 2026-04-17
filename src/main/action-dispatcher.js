@@ -17,7 +17,13 @@ class ActionDispatcher {
 
     for (const action of config.actions) {
       if (action.enabled === false) continue;
-      const trigger = action.triggers.find((t) => t.ccNumber === controller);
+      // Match on CC number AND channel. Triggers without a channel match
+      // any channel (backwards compat with configs from v0.2.x).
+      const trigger = action.triggers.find(
+        (t) =>
+          t.ccNumber === controller &&
+          (t.channel == null || t.channel === channel)
+      );
       if (!trigger) continue;
 
       const threshold = trigger.threshold != null ? trigger.threshold : 1;
@@ -29,10 +35,13 @@ class ActionDispatcher {
       const activeSet = this.triggerState.get(action.id);
       const wasOn = activeSet.size > 0;
 
+      // Use "channel:cc" as the key so two triggers with the same CC on
+      // different channels count as separate active sources.
+      const triggerKey = `${channel}:${controller}`;
       if (isAbove) {
-        activeSet.add(controller);
+        activeSet.add(triggerKey);
       } else {
-        activeSet.delete(controller);
+        activeSet.delete(triggerKey);
       }
 
       const isOn = activeSet.size > 0;

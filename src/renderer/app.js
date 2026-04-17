@@ -119,11 +119,15 @@
     window.api.sendMidiCC({ channel, controller, value });
 
     // Update CC value display
-    ActionView.updateCC(controller, value);
+    ActionView.updateCC(channel, controller, value);
 
     // Update local action state for UI (mirrors dispatcher OR-logic)
     for (const action of config.actions) {
-      const trigger = action.triggers.find((t) => t.ccNumber === controller);
+      const trigger = action.triggers.find(
+        (t) =>
+          t.ccNumber === controller &&
+          (t.channel == null || t.channel === channel)
+      );
       if (!trigger) continue;
 
       const threshold = trigger.threshold != null ? trigger.threshold : 1;
@@ -131,11 +135,12 @@
         actionTriggerState.set(action.id, new Set());
       }
       const activeSet = actionTriggerState.get(action.id);
+      const key = `${channel}:${controller}`;
 
       if (value >= threshold) {
-        activeSet.add(controller);
+        activeSet.add(key);
       } else {
-        activeSet.delete(controller);
+        activeSet.delete(key);
       }
 
       ActionView.updateActionState(action.id, activeSet.size > 0);
@@ -143,7 +148,7 @@
 
     // Forward to config panel for in-modal learn
     if (ConfigPanel.isOpen()) {
-      ConfigPanel.handleMidiLearn(controller);
+      ConfigPanel.handleMidiLearn(channel, controller);
     }
   }
 

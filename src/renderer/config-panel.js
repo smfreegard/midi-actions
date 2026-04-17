@@ -180,11 +180,13 @@ const ConfigPanel = (() => {
     learnStatus().classList.add('hidden');
   }
 
-  function handleMidiLearn(ccNumber) {
+  function handleMidiLearn(channel, ccNumber) {
     if (!isLearningTriggers) return;
-    const exists = currentTriggers.some((t) => t.ccNumber === ccNumber);
+    const exists = currentTriggers.some(
+      (t) => t.ccNumber === ccNumber && t.channel === channel
+    );
     if (!exists) {
-      currentTriggers.push({ ccNumber, threshold: 1 });
+      currentTriggers.push({ ccNumber, channel, threshold: 1 });
       renderTriggers();
     }
   }
@@ -201,8 +203,9 @@ const ConfigPanel = (() => {
     currentTriggers.forEach((trigger, i) => {
       const row = document.createElement('div');
       row.className = 'trigger-row';
+      const chLabel = trigger.channel != null ? ` ch${trigger.channel + 1}` : '';
       row.innerHTML = `
-        <span class="trigger-cc-label">CC ${trigger.ccNumber}</span>
+        <span class="trigger-cc-label">CC ${trigger.ccNumber}${chLabel}</span>
         <label class="trigger-threshold-label">Threshold:</label>
         <input type="range" class="trigger-threshold" min="0" max="127" value="${trigger.threshold != null ? trigger.threshold : 1}" data-index="${i}">
         <span class="trigger-threshold-value">${trigger.threshold != null ? trigger.threshold : 1}</span>
