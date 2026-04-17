@@ -102,17 +102,18 @@ class WindowsKeySender {
       this.ready = false;
     });
 
-    // Build setup script as a single-line semicolon-separated command.
-    // Multi-line here-strings are fragile over stdin. Escape quotes for
-    // the embedded C# source.
+    // Build setup script as single-line semicolon-separated commands.
+    // Use PowerShell single-quoted string for the C# so embedded double
+    // quotes pass through literally (PS double-quoted strings use ""
+    // for escaping, not \").
     const csharp =
       'using System;using System.Runtime.InteropServices;' +
       'public class KP{' +
-      '[DllImport(\\"user32.dll\\")]' +
+      '[DllImport("user32.dll")]' +
       'public static extern void keybd_event(byte bVk,byte bScan,uint dwFlags,UIntPtr dwExtraInfo);' +
       '}';
     const setup =
-      `Add-Type -TypeDefinition "${csharp}";` +
+      `Add-Type -TypeDefinition '${csharp}';` +
       `function Send-Keys([int[]]$mods,[int]$vk){` +
       `foreach($m in $mods){[KP]::keybd_event([byte]$m,0,0,[UIntPtr]::Zero)};` +
       `[KP]::keybd_event([byte]$vk,0,0,[UIntPtr]::Zero);` +
