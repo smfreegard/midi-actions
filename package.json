@@ -1,7 +1,7 @@
 {
   "name": "midi-hooks",
   "productName": "MIDI Hooks",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "MIDI CC to Webhook Actions",
   "main": "src/main/main.js",
   "scripts": {

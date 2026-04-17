@@ -115,6 +115,14 @@ class WindowsKeySender {
     const setup =
       `Add-Type -TypeDefinition '${csharp}';` +
       `function Send-Keys([int[]]$mods,[int]$vk){` +
+      // Pre-release all modifiers to prevent physical keyboard state
+      // from leaking into the synthetic keystroke (e.g. user holding
+      // Ctrl would make synthetic 'a' become Ctrl+A).
+      `[KP]::keybd_event(0x11,0,2,[UIntPtr]::Zero);` + // release Ctrl
+      `[KP]::keybd_event(0x10,0,2,[UIntPtr]::Zero);` + // release Shift
+      `[KP]::keybd_event(0x12,0,2,[UIntPtr]::Zero);` + // release Alt
+      `[KP]::keybd_event(0x5B,0,2,[UIntPtr]::Zero);` + // release LWin
+      `[KP]::keybd_event(0x5C,0,2,[UIntPtr]::Zero);` + // release RWin
       `foreach($m in $mods){[KP]::keybd_event([byte]$m,0,0,[UIntPtr]::Zero)};` +
       `[KP]::keybd_event([byte]$vk,0,0,[UIntPtr]::Zero);` +
       `[KP]::keybd_event([byte]$vk,0,2,[UIntPtr]::Zero);` +
