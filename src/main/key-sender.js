@@ -102,26 +102,31 @@ class WindowsKeySender {
       this.ready = false;
     });
 
-    // Define a helper type that wraps keybd_event. Modifiers are pressed
-    // first, the main key is pressed and released, then modifiers are
-    // released in reverse order. This avoids the sticky modifier bugs
-    // that SendKeys has.
-    const setup = `
-Add-Type -Name KP -Namespace MH -MemberDefinition @"
-  [System.Runtime.InteropServices.DllImport("user32.dll")]
-  public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, System.UIntPtr dwExtraInfo);
-"@
-function Send-Keys([int[]]$mods, [int]$vk) {
-  foreach ($m in $mods) { [MH.KP]::keybd_event([byte]$m, 0, 0, [UIntPtr]::Zero) }
-  [MH.KP]::keybd_event([byte]$vk, 0, 0, [UIntPtr]::Zero)
-  [MH.KP]::keybd_event([byte]$vk, 0, 2, [UIntPtr]::Zero)
-  for ($i = $mods.Length - 1; $i -ge 0; $i--) { [MH.KP]::keybd_event([byte]$mods[$i], 0, 2, [UIntPtr]::Zero) }
-}
-Write-Output READY
-`.replace(/\n/g, '\r\n');
+    // Build setup script as a single-line semicolon-separated command.
+    // Multi-line here-strings are fragile over stdin. Escape quotes for
+    // the embedded C# source.
+    const csharp =
+      'using System;using System.Runtime.InteropServices;' +
+      'public class KP{' +
+      '[DllImport(\\"user32.dll\\")]' +
+      'public static extern void keybd_event(byte bVk,byte bScan,uint dwFlags,UIntPtr dwExtraInfo);' +
+      '}';
+    const setup =
+      `Add-Type -TypeDefinition "${csharp}";` +
+      `function Send-Keys([int[]]$mods,[int]$vk){` +
+      `foreach($m in $mods){[KP]::keybd_event([byte]$m,0,0,[UIntPtr]::Zero)};` +
+      `[KP]::keybd_event([byte]$vk,0,0,[UIntPtr]::Zero);` +
+      `[KP]::keybd_event([byte]$vk,0,2,[UIntPtr]::Zero);` +
+      `for($i=$mods.Length-1;$i -ge 0;$i--){[KP]::keybd_event([byte]$mods[$i],0,2,[UIntPtr]::Zero)}` +
+      `};` +
+      `Write-Output READY\r\n`;
+
     this.proc.stdin.write(setup);
     this.proc.stdout.on('data', (d) => {
-      if (!this.ready && d.toString().includes('READY')) {
+      const text = d.toString();
+      console.log('[key-sender] stdout:', text.trim());
+      if (!this.ready && text.includes('READY')) {
+        console.log('[key-sender] ready; flushing', this._queue.length, 'queued');
         this.ready = true;
         while (this._queue.length) {
           this.proc.stdin.write(this._queue.shift());
@@ -139,6 +144,7 @@ Write-Output READY
     const { vk, modVks } = winTranslate(combo);
     const modsArg = modVks.length ? `@(${modVks.join(',')})` : '@()';
     const cmd = `Send-Keys ${modsArg} ${vk}\r\n`;
+    console.log('[key-sender] send', combo, '->', cmd.trim(), 'ready=', this.ready);
     if (this.ready) {
       this.proc.stdin.write(cmd);
     } else {
