@@ -33,57 +33,49 @@ function parseCombo(combo) {
 }
 
 // ======================================================================
-// Windows: persistent PowerShell with SendKeys
+// Windows: persistent PowerShell using Win32 keybd_event via P/Invoke.
+// SendKeys is unreliable under rapid fire — inherits stuck modifier state
+// from prior events, causing random Ctrl+X outputs. keybd_event gives us
+// deterministic key press/release control.
 // ======================================================================
 
-// SendKeys syntax: + = Shift, ^ = Ctrl, % = Alt, ^ = Shift+. See
-// https://learn.microsoft.com/en-us/dotnet/api/system.windows.forms.sendkeys
-// Special keys are wrapped in {}. Letters/digits are literal but must be
-// escaped if they are reserved (+^%~(){}).
-const WIN_KEY_MAP = {
-  up: '{UP}',
-  down: '{DOWN}',
-  left: '{LEFT}',
-  right: '{RIGHT}',
-  enter: '{ENTER}',
-  return: '{ENTER}',
-  escape: '{ESC}',
-  esc: '{ESC}',
-  tab: '{TAB}',
-  space: ' ',
-  backspace: '{BACKSPACE}',
-  delete: '{DELETE}',
-  home: '{HOME}',
-  end: '{END}',
-  pageup: '{PGUP}',
-  pagedown: '{PGDN}',
+// Windows Virtual-Key codes
+const VK = {
+  // modifiers
+  ctrl: 0x11, shift: 0x10, alt: 0x12, meta: 0x5B,
+  // special keys
+  up: 0x26, down: 0x28, left: 0x25, right: 0x27,
+  enter: 0x0D, return: 0x0D,
+  escape: 0x1B, esc: 0x1B,
+  tab: 0x09, space: 0x20,
+  backspace: 0x08, delete: 0x2E,
+  home: 0x24, end: 0x23,
+  pageup: 0x21, pagedown: 0x22,
 };
+
+function winKeyVk(key) {
+  if (VK[key] !== undefined) return VK[key];
+  if (/^[a-z]$/.test(key)) return key.toUpperCase().charCodeAt(0); // A-Z = 0x41-0x5A
+  if (/^[0-9]$/.test(key)) return key.charCodeAt(0); // 0-9 = 0x30-0x39
+  if (/^f([1-9]|1[0-2])$/.test(key)) {
+    const n = parseInt(key.slice(1), 10);
+    return 0x70 + (n - 1); // F1 = 0x70 … F12 = 0x7B
+  }
+  return null;
+}
 
 function winTranslate(combo) {
   const { modifiers, key } = parseCombo(combo);
-  let mod = '';
-  if (modifiers.includes('ctrl')) mod += '^';
-  if (modifiers.includes('shift')) mod += '+';
-  if (modifiers.includes('alt')) mod += '%';
-  // meta/Win key has no SendKeys equivalent; ignored
+  const vk = winKeyVk(key);
+  if (vk === null) throw new Error(`Unsupported key: ${key}`);
 
-  let keyPart;
-  if (WIN_KEY_MAP[key]) {
-    keyPart = WIN_KEY_MAP[key];
-  } else if (/^f([1-9]|1[0-2])$/.test(key)) {
-    keyPart = `{${key.toUpperCase()}}`;
-  } else if (/^[a-z0-9]$/.test(key)) {
-    // Wrap to avoid literal-string interpretation issues when combined
-    keyPart = key;
-  } else {
-    throw new Error(`Unsupported key: ${key}`);
-  }
+  const modVks = [];
+  if (modifiers.includes('ctrl')) modVks.push(VK.ctrl);
+  if (modifiers.includes('shift')) modVks.push(VK.shift);
+  if (modifiers.includes('alt')) modVks.push(VK.alt);
+  if (modifiers.includes('meta')) modVks.push(VK.meta);
 
-  // If modifier+single-char, group so modifier only applies to that char
-  if (mod && keyPart.length === 1) {
-    return `${mod}${keyPart}`;
-  }
-  return `${mod}${keyPart}`;
+  return { vk, modVks };
 }
 
 class WindowsKeySender {
@@ -110,17 +102,29 @@ class WindowsKeySender {
       this.ready = false;
     });
 
-    // Preload the Forms assembly once so SendKeys works later without reload
-    this.proc.stdin.write(
-      "Add-Type -AssemblyName System.Windows.Forms\r\nWrite-Output READY\r\n"
-    );
-    this.proc.stdout.once('data', (d) => {
-      if (d.toString().includes('READY')) {
+    // Define a helper type that wraps keybd_event. Modifiers are pressed
+    // first, the main key is pressed and released, then modifiers are
+    // released in reverse order. This avoids the sticky modifier bugs
+    // that SendKeys has.
+    const setup = `
+Add-Type -Name KP -Namespace MH -MemberDefinition @"
+  [System.Runtime.InteropServices.DllImport("user32.dll")]
+  public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, System.UIntPtr dwExtraInfo);
+"@
+function Send-Keys([int[]]$mods, [int]$vk) {
+  foreach ($m in $mods) { [MH.KP]::keybd_event([byte]$m, 0, 0, [UIntPtr]::Zero) }
+  [MH.KP]::keybd_event([byte]$vk, 0, 0, [UIntPtr]::Zero)
+  [MH.KP]::keybd_event([byte]$vk, 0, 2, [UIntPtr]::Zero)
+  for ($i = $mods.Length - 1; $i -ge 0; $i--) { [MH.KP]::keybd_event([byte]$mods[$i], 0, 2, [UIntPtr]::Zero) }
+}
+Write-Output READY
+`.replace(/\n/g, '\r\n');
+    this.proc.stdin.write(setup);
+    this.proc.stdout.on('data', (d) => {
+      if (!this.ready && d.toString().includes('READY')) {
         this.ready = true;
-        // Flush any queued sends
         while (this._queue.length) {
-          const cmd = this._queue.shift();
-          this.proc.stdin.write(cmd);
+          this.proc.stdin.write(this._queue.shift());
         }
       }
     });
@@ -132,10 +136,9 @@ class WindowsKeySender {
 
   async send(combo) {
     this._ensureProc();
-    const sendKeysArg = winTranslate(combo);
-    // Escape single quotes for PowerShell single-quoted string
-    const escaped = sendKeysArg.replace(/'/g, "''");
-    const cmd = `[System.Windows.Forms.SendKeys]::SendWait('${escaped}')\r\n`;
+    const { vk, modVks } = winTranslate(combo);
+    const modsArg = modVks.length ? `@(${modVks.join(',')})` : '@()';
+    const cmd = `Send-Keys ${modsArg} ${vk}\r\n`;
     if (this.ready) {
       this.proc.stdin.write(cmd);
     } else {
@@ -145,12 +148,8 @@ class WindowsKeySender {
 
   shutdown() {
     if (this.proc) {
-      try {
-        this.proc.stdin.end();
-      } catch (_) {}
-      try {
-        this.proc.kill();
-      } catch (_) {}
+      try { this.proc.stdin.end(); } catch (_) {}
+      try { this.proc.kill(); } catch (_) {}
       this.proc = null;
       this.ready = false;
     }
