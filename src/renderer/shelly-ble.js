@@ -8,6 +8,10 @@ const ShellyBle = (() => {
   const RX_CTL_UUID = '5f6d4f53-5f52-5043-5f72-785f63746c5f';
 
   const connections = new Map();
+  // Per-device promise chain to serialize RPC calls. Concurrent GATT
+  // operations on the same device cause "GATT operation already in
+  // progress" errors and trigger spurious reconnects.
+  const sendQueues = new Map();
   let rpcId = 0;
   let onConnectionChange = null;
 
@@ -81,7 +85,25 @@ const ShellyBle = (() => {
     return conn && conn.device.gatt.connected;
   }
 
-  async function sendRpc(deviceName, method, params) {
+  function sendRpc(deviceName, method, params) {
+    // Chain onto any in-flight call for this device so RPCs execute
+    // sequentially. Concurrent GATT operations cause failures and
+    // spurious reconnects.
+    const previous = sendQueues.get(deviceName) || Promise.resolve();
+    const task = previous
+      .catch(() => {}) // a previous failure shouldn't block this call
+      .then(() => sendRpcImpl(deviceName, method, params));
+    sendQueues.set(deviceName, task);
+    // Clear the queue entry once the chain is settled (so it doesn't grow)
+    task.finally(() => {
+      if (sendQueues.get(deviceName) === task) {
+        sendQueues.delete(deviceName);
+      }
+    });
+    return task;
+  }
+
+  async function sendRpcImpl(deviceName, method, params) {
     let conn = connections.get(deviceName);
     if (!conn) {
       throw new Error(`Not connected to ${deviceName}`);
